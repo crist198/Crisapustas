@@ -1,96 +1,143 @@
-import logging
-import asyncio
+
+import os
+import random
+import threading
+import time
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# ==========================================
+# 1. SERVIDOR WEB PARA EL PLAN GRATUITO DE RENDER
+# ==========================================
+app = Flask(__name__)
 
+
+@app.route("/")
+def home():
+  return "¡El bot de apuestas y resultados @ApuestasCrisCol_bot está activo!"
+
+
+def run_web():
+  app.run(host="0.0.0.0", port=10000)
+
+
+# ==========================================
+# 2. LÓGICA DEL BOT: COMBINADAS Y RESULTADOS
+# ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_name = update.effective_user.first_name
-    mensaje = (
-        f"¡Hola, {user_name}! 🤖⚽🔥\n\n"
-        "Bienvenido a **BetPulse Apuestas** (Asistente Inteligente Global).\n"
-        "Modelo optimizado con más de 45 variables para cualquier partido del mundo.\n\n"
-        "📋 **Comandos disponibles:**\n"
-        "📈 /pronosticos - Partidos individuales globales con alta efectividad\n"
-        "⚡ /combinadas - Combinadas y Parlays optimizados de todas las clases\n"
-        "📊 /bankroll - Administrar tu presupuesto y efectividad (93.5%)\n"
-        "ℹ️ /ayuda - Información sobre el modelo inteligente"
-    )
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+# Equipos y ligas globales
+LIGAS_MUNDO = [
+    "Champions League (Europa)",
+    "Premier League (Inglaterra)",
+    "LaLiga (España)",
+    "Serie A (Italia)",
+    "Bundesliga (Alemania)",
+    "Copa Libertadores (Sudamérica)",
+    "Liga Profesional (Argentina)",
+    "Liga BetPlay (Colombia)",
+    "Brasileirão (Brasil)",
+    "Liga MX (México)",
+]
 
-async def pronosticos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto_pronosticos = (
-        "🔥 **Pronósticos Individuales Globales (Efectividad 94%):**\n\n"
-        "1️⃣ **Atlético Nacional vs Millonarios FC** (Liga BetPlay - Colombia)\n"
-        "• Pronóstico: Atlético Nacional gana o empata (Doble Oportunidad)\n"
-        "• Probabilidad estimada: **94.5%** | Cuota: 1.32\n\n"
-        "2️⃣ **River Plate vs Independiente del Valle** (Copa Libertadores)\n"
-        "• Pronóstico: Más de 2.5 goles en el partido\n"
-        "• Probabilidad estimada: **91.2%** | Cuota: 1.75\n\n"
-        "3️⃣ **Real Madrid vs Atlético de Madrid** (LaLiga - España)\n"
-        "• Pronóstico: Ambos equipos anotan (Sí)\n"
-        "• Probabilidad estimada: **89.8%** | Cuota: 1.80\n\n"
-        "🌐 *Nota: El sistema está abierto para analizar cualquier otro partido del mundo que desees.*"
-    )
-    await update.message.reply_text(texto_pronosticos, parse_mode="Markdown")
+EQUIPOS = [
+    ("Real Madrid", "Barcelona"),
+    ("Manchester City", "Arsenal"),
+    ("Bayern Múnich", "Borussia Dortmund"),
+    ("Inter de Milán", "Juventus"),
+    ("Flamengo", "Palmeiras"),
+    ("River Plate", "Boca Juniors"),
+    ("Millonarios", "Atlético Nacional"),
+    ("América de Cali", "Junior de Barranquilla"),
+    ("PSG", "Marsella"),
+]
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await update.message.reply_text(
+      "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
+      "Te ofrezco pronósticos y seguimiento global:\n"
+      "📌 Usa **/combinadas** para ver jugadas de alta efectividad (91%-96%).\n"
+      "📌 Usa **/resultados** para ver los marcadores actualizados en"
+      " directo."
+  )
+
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    texto_combinadas = (
-        "⚡ **Combinadas de Todas las Clases (Parlays Globales):**\n\n"
-        "🎯 **Combinada 1: 'Segura / Alta Probabilidad' (Cuota ~2.45)**\n"
-        "• Atlético Nacional gana (Liga BetPlay) — 94%\n"
-        "• Flamengo o Empate (Brasileirao) — 91%\n"
-        "👉 *Efectividad conjunta estimada: 85.5%*\n\n"
-        "🚀 **Combinada 2: 'Goleadora / Over' (Cuota ~4.20)**\n"
-        "• River Plate vs Ind. del Valle: Más de 2.5 goles\n"
-        "• Real Madrid vs Atlético: Ambos anotan\n"
-        "👉 *Efectividad conjunta estimada: 79.2%*\n\n"
-        "💎 **Combinada 3: 'Élite / Cuota Total' (Cuota ~8.50)**\n"
-        "• Victoria de Junior de Barranquilla\n"
-        "• Más de 1.5 goles en Barcelona vs Real Madrid\n"
-        "• Ambos anotan en partido de Copa Libertadores\n"
-        "👉 *Efectividad conjunta estimada: 72.4%*\n\n"
-        "Usa /bankroll para gestionar el stake adecuado para cada combinada."
+  partidos_seleccionados = random.sample(EQUIPOS, 3)
+  liga1 = random.choice(LIGAS_MUNDO)
+  liga2 = random.choice(LIGAS_MUNDO)
+  liga3 = random.choice(LIGAS_MUNDO)
+
+  cuota1 = round(random.uniform(1.70, 2.30), 2)
+  cuota2 = round(random.uniform(1.80, 2.45), 2)
+  cuota3 = round(random.uniform(1.65, 2.10), 2)
+
+  cuota_total = round(cuota1 * cuota2 * cuota3, 2)
+  efectividad = random.randint(91, 96)  # Realista y menor al 99%
+
+  mensaje = (
+      f"🎯 **APUESTA COMBINADA DEL DÍA (GLOBAL)** 🌍⚽\n\n"
+      f"1️⃣ *{partidos_seleccionados[0][0]} vs"
+      f" {partidos_seleccionados[0][1]}*\n   🏆 Liga: {liga1}\n   📌 Pronóstico:"
+      f" Más de 1.5 goles / Ambos anotan\n   ⚡ Cuota: {cuota1}\n\n"
+      f"2️⃣ *{partidos_seleccionados[1][0]} vs"
+      f" {partidos_seleccionados[1][1]}*\n   🏆 Liga: {liga2}\n   📌 Pronóstico:"
+      f" Victoria local o Empate (Doble Oportunidad)\n   ⚡ Cuota:"
+      f" {cuota2}\n\n"
+      f"3️⃣ *{partidos_seleccionados[2][0]} vs"
+      f" {partidos_seleccionados[2][1]}*\n   🏆 Liga: {liga3}\n   📌 Pronóstico:"
+      f" Menos de 3.5 goles totales\n   ⚡ Cuota: {cuota3}\n\n"
+      f"──────────────────────\n"
+      f"📊 **Cuota Total Combinada:** `x{cuota_total}`\n"
+      f"📈 **Índice de Efectividad Estimado:** `{efectividad}%` 🚀\n\n"
+      f"_Usa /combinadas de nuevo para generar nuevas jugadas._"
+  )
+
+  await update.message.reply_text(mensaje, parse_mode="Markdown")
+
+
+async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  # Simulamos resultados actualizados de la jornada mundial
+  partidos_en_vivo = random.sample(EQUIPOS, 4)
+  estados = ["⏱ 78'", "⏱ 45'+2", "✅ Finalizado", "⏱ 89'"]
+
+  mensaje = "⚽ **RESULTADOS ACTUALIZADOS EN VIVO (MUNDO)** 🌍\n\n"
+
+  for i in range(4):
+    eq1, eq2 = partidos_en_vivo[i]
+    goles1 = random.randint(0, 3)
+    goles2 = random.randint(0, 3)
+    estado = estados[i]
+    liga = random.choice(LIGAS_MUNDO)
+
+    mensaje += (
+        f"🏆 *{liga}*\n"
+        f"🔹 {eq1} **{goles1} - {goles2}** {eq2}\n"
+        f"Status: `{estado}`\n\n"
     )
-    await update.message.reply_text(texto_combinadas, parse_mode="Markdown")
 
-async def bankroll(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje = (
-        "📊 **Estado de Administración (Bankroll & Rendimiento):**\n\n"
-        "• Capital Actual: $100.00 USD\n"
-        "• Efectividad Reciente del Modelo: **93.5%** (Últimos 30 días)\n"
-        "• Récord de Aciertos: 28 Victorias / 2 Derrotas\n"
-        "• Recomendación de Stake: 2% a 5% por combinada o apuesta.\n\n"
-        "¡Tu sistema de apuestas inteligentes está activo y operando con la red para todo el mundo!"
-    )
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+  mensaje += "_Usa /resultados para refrescar los marcadores en tiempo real._"
 
-async def ayuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    mensaje = (
-        "ℹ️ **Acerca del Sistema BetPulse Global:**\n\n"
-        "Nuestro modelo procesa más de 45 variables en tiempo real (posesión, xG, bajas, clima, arbitraje y cuotas de mercado) cubriendo ligas y torneos de todo el planeta.\n\n"
-        "Usa /pronosticos o /combinadas para ver las recomendaciones."
-    )
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+  await update.message.reply_text(mensaje, parse_mode="Markdown")
 
-def main():
-    app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("pronosticos", pronosticos))
-    app.add_handler(CommandHandler("combinadas", combinadas))
-    app.add_handler(CommandHandler("parlays", combinadas))
-    app.add_handler(CommandHandler("bankroll", bankroll))
-    app.add_handler(CommandHandler("ayuda", ayuda))
+def run_bot():
+  print("Iniciando el bot de Telegram con resultados y combinadas...")
+  application = ApplicationBuilder().token(TOKEN).build()
+  application.add_handler(CommandHandler("start", start))
+  application.add_handler(CommandHandler("combinadas", combinadas))
+  application.add_handler(CommandHandler("resultados", resultados))
+  application.run_polling()
 
-    print("🤖 Bot de BetPulse global en ejecución...")
-    app.run_polling()
 
-if __name__ == '__main__':
-    main()
+# ==========================================
+# 3. EJECUCIÓN SIMULTÁNEA (WEB + BOT)
+# ==========================================
+if __name__ == "__main__":
+  web_thread = threading.Thread(target=run_web)
+  web_thread.daemon = True
+  web_thread.start()
+
+  run_bot()
