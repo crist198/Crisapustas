@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import threading
@@ -5,6 +6,13 @@ import time
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+
+# Configurar logs para ver errores detallados en Render
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # 1. SERVIDOR WEB PARA EL PLAN GRATUITO DE RENDER
@@ -55,8 +63,7 @@ EQUIPOS = [
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
-      "Te ofrezco pronósticos y seguimiento global:\n"
+      "¡Hola! Bienvenido al bot de apuestas ⚽🔥\n\n"
       "📌 Usa **/combinadas** para ver jugadas de alta efectividad (91%-96%).\n"
       "📌 Usa **/resultados** para ver los marcadores actualizados en"
       " directo."
@@ -74,7 +81,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   cuota3 = round(random.uniform(1.65, 2.10), 2)
 
   cuota_total = round(cuota1 * cuota2 * cuota3, 2)
-  efectividad = random.randint(91, 96)  # Realista y menor al 99%
+  efectividad = random.randint(91, 96)
 
   mensaje = (
       f"🎯 **APUESTA COMBINADA DEL DÍA (GLOBAL)** 🌍⚽\n\n"
@@ -98,7 +105,6 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  # Lista estructurada para que cada liga coincida correctamente con sus equipos reales
   partidos_reales = [
       ("Premier League (Inglaterra)", "Manchester City", "Arsenal"),
       ("LaLiga (España)", "Real Madrid", "Barcelona"),
@@ -110,7 +116,7 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
       ("Ligue 1 (Francia)", "PSG", "Marsella"),
   ]
 
-  jornada = random.sample(partidas_reales, 4)
+  jornada = random.sample(partidos_reales, 4)
   estados = ["⏱ 78'", "⏱ 45'+2", "✅ Finalizado", "⏱ 89'"]
 
   mensaje = "⚽ **RESULTADOS ACTUALIZADOS EN VIVO (MUNDO)** 🌍\n\n"
@@ -132,12 +138,23 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(mensaje, parse_mode="Markdown")
 
 
+# Función para capturar y mostrar errores en los Logs de Render
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+  logger.error("Excepción al manejar una actualización:", exc_info=context.error)
+
+
 def run_bot():
-  print("Iniciando el bot de Telegram con resultados y combinadas...")
+  print("Iniciando el bot de Telegram con control de errores...")
   application = ApplicationBuilder().token(TOKEN).build()
+
+  # Registrar comandos
   application.add_handler(CommandHandler("start", start))
   application.add_handler(CommandHandler("combinadas", combinadas))
   application.add_handler(CommandHandler("resultados", resultados))
+
+  # Registrar el manejador de errores
+  application.add_error_handler(error_handler)
+
   application.run_polling()
 
 
