@@ -1,4 +1,3 @@
-
 import os
 import random
 import threading
@@ -27,7 +26,7 @@ def run_web():
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 
-# Equipos y ligas globales
+# Equipos y ligas globales para combinadas
 LIGAS_MUNDO = [
     "Champions League (Europa)",
     "Premier League (Inglaterra)",
@@ -99,18 +98,28 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  # Simulamos resultados actualizados de la jornada mundial
-  partidos_en_vivo = random.sample(EQUIPOS, 4)
+  # Lista estructurada para que cada liga coincida correctamente con sus equipos reales
+  partidos_reales = [
+      ("Premier League (Inglaterra)", "Manchester City", "Arsenal"),
+      ("LaLiga (España)", "Real Madrid", "Barcelona"),
+      ("Serie A (Italia)", "Inter de Milán", "Juventus"),
+      ("Bundesliga (Alemania)", "Bayern Múnich", "Borussia Dortmund"),
+      ("Brasileirão (Brasil)", "Flamengo", "Palmeiras"),
+      ("Liga Profesional (Argentina)", "River Plate", "Boca Juniors"),
+      ("Liga BetPlay (Colombia)", "Millonarios", "Atlético Nacional"),
+      ("Ligue 1 (Francia)", "PSG", "Marsella"),
+  ]
+
+  jornada = random.sample(partidas_reales, 4)
   estados = ["⏱ 78'", "⏱ 45'+2", "✅ Finalizado", "⏱ 89'"]
 
   mensaje = "⚽ **RESULTADOS ACTUALIZADOS EN VIVO (MUNDO)** 🌍\n\n"
 
   for i in range(4):
-    eq1, eq2 = partidos_en_vivo[i]
+    liga, eq1, eq2 = jornada[i]
     goles1 = random.randint(0, 3)
     goles2 = random.randint(0, 3)
     estado = estados[i]
-    liga = random.choice(LIGAS_MUNDO)
 
     mensaje += (
         f"🏆 *{liga}*\n"
