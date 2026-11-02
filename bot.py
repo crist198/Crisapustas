@@ -39,7 +39,7 @@ def run_web():
 
 
 # ==========================================
-# 2. LÓGICA DEL BOT: BET BUILDERS GLOBALES Y HORA COLOMBIA
+# 2. LÓGICA DEL BOT: BET BUILDERS MASIVOS GLOBALES Y HORA COLOMBIA
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
@@ -49,19 +49,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido al asistente **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **partidos con al menos 30 minutos de anticipación** con su Bet Builder de 3 selecciones."
+      "📌 Usa **/combinadas** para ver la **cartelera masiva global ampliada** con al menos 30 minutos de anticipación y su Bet Builder de 3 selecciones."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Escaneando cartelera, aplicando margen de 30 minutos de anticipación..."
+      "🔄 Escaneando cartelera masiva mundial (Europa, UK, US, LATAM), aplicando filtro de 30 minutos..."
   )
 
-  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu,us&markets=h2h&oddsFormat=decimal"
+  # Ampliamos las regiones a eu,uk,us,au para capturar un volumen masivo de partidos
+  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu,uk,us,au&markets=h2h&oddsFormat=decimal"
 
   try:
-    response = requests.get(url, timeout=15)
+    response = requests.get(url, timeout=20)
     data = response.json()
 
     if isinstance(data, dict) and "message" in data:
@@ -128,7 +129,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    # Tomamos hasta 30 partidos válidos
+    # Tomamos hasta 30 partidos válidos para llenar los bloques
     partidos_a_mostrar = partidos_validos[:30]
 
     # Dividir en bloques de máximo 6 partidos (hasta 5 mensajes en total)
@@ -144,7 +145,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       if not bloque_partidos:
         continue
 
-      mensaje = f"🎯 **CARTELERA CON 30MIN+ DE ANTICIPACIÓN (Parte {index}/{total_bloques})** 🌍⚽\n\n"
+      mensaje = f"🎯 **CARTELERA GLOBAL MASIVA (Parte {index}/{total_bloques})** 🌍⚽\n\n"
 
       for i, partido in enumerate(bloque_partidos, 1):
         num_real = (index - 1) * tamanio_bloque + i
@@ -236,7 +237,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
       if index == total_bloques:
-        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal partidos con +30min de anticipación: {total_partidos}_"
+        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal partidos globales analizados: {total_partidos}_"
 
       await update.message.reply_text(mensaje, parse_mode="Markdown")
       time.sleep(0.7)  # Pausa breve para orden en Telegram
@@ -254,7 +255,7 @@ async def error_handler(object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot con filtro de 30 minutos de anticipación...")
+  print("Iniciando el bot con cartelera masiva global ampliada y filtro de 30 min...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
