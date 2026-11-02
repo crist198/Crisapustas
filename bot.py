@@ -108,10 +108,11 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       except Exception:
         hora_col = "Hora por confirmar"
 
-      # Extraer cuotas reales de la API con validación robusta de nombres
+      # EXTRACCIÓN BLINDADA Y ROBUSTA DE CUOTAS
       bookmakers = partido.get("bookmakers", [])
       cuota_local = 1.80
       cuota_visitante = 2.10
+      cuotas_encontradas = False
 
       if bookmakers:
         for bm in bookmakers:
@@ -126,7 +127,10 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
                   cuota_local = price
                 elif name.strip().lower() == away_team.strip().lower():
                   cuota_visitante = price
+              cuotas_encontradas = True
               break
+          if cuotas_encontradas:
+            break
 
       # CORRECCIÓN DE SESGO DE FAVORITO (1X o X2 estricto)
       if cuota_visitante < cuota_local:
@@ -175,22 +179,35 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "🔍 Consultando marcadores en vivo de la jornada..."
   )
 
-  url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=2026-11-01&s=Soccer"
+  # Obtener la fecha actual dinámicamente en zona horaria de Colombia
+  if zoneinfo_available:
+    hoy_col = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%d")
+  else:
+    hoy_col = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d")
+
+  url = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={hoy_col}&s=Soccer"
 
   try:
     response = requests.get(url, timeout=10)
-    data = response.json()
-    events = data.get("events", [])
-
-    if not events:
+    
+    if response.status_code != 200:
       await update.message.reply_text(
-          "⚽ **RESULTADOS EN VIVO (MUNDO)** 🌍\n\n"
-          "No hay partidos registrados para el día de hoy en este servidor"
-          " público. ¡Vuelve más tarde! ⏱"
+          "⚠️ El servidor de resultados está tardando en responder. "
+          "Inténtalo de nuevo en unos segundos."
       )
       return
 
-    mensaje = "⚽ **RESULTADOS EN VIVO (MUNDO - REAL)** 🌍\n\n"
+    data = response.json()
+    events = data.get("events", [])
+
+    if not events or not isinstance(events, list):
+      await update.message.reply_text(
+          f"⚽ **RESULTADOS EN VIVO ({hoy_col})** 🌍\n\n"
+          "No hay partidos de fútbol registrados para el día de hoy en este servidor público. ¡Vuelve más tarde! ⏱"
+      )
+      return
+
+    mensaje = f"⚽ **RESULTADOS EN VIVO (MUNDO - {hoy_col})** 🌍\n\n"
 
     for match in events[:10]:
       liga = match.get("strLeague", "Liga Internacional")
@@ -200,20 +217,24 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
       goles2 = match.get("intAwayScore", "0")
       progreso = match.get("strProgress", "En curso")
 
-      g1 = goles1 if goles1 else "0"
-      g2 = goles2 if goles2 else "0"
+      g1 = goles1 if goles1 is not None else "0"
+      g2 = goles2 if goles2 is not None else "0"
 
       mensaje += (
           f"🏆 *{liga}*\n"
           f"🔹 {eq1} **{g1} - {g2}** {eq2}\n"
-          f"Status: `{progreso}`\n\n"
+          f"Status: `{progreso if progreso else 'Programado/En juego'}`\n\n"
       )
 
     mensaje += "_Datos obtenidos en tiempo real de API abierta._"
+    
+    if len(mensaje) > 4000:
+      mensaje = mensaje[:3950] + "\n\n_(Resultados recortados por límite)_"
+
     await update.message.reply_text(mensaje, parse_mode="Markdown")
 
   except Exception as e:
-    logger.error(f"Error al conectar con la API pública: {e}")
+    logger.error(f"Error al conectar con la API pública de resultados: {e}")
     await update.message.reply_text(
         "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
         "Inténtalo de nuevo en unos segundos."
