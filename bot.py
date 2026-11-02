@@ -188,12 +188,13 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
   url = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={hoy_col}&s=Soccer"
 
   try:
-    response = requests.get(url, timeout=10)
+    # Aumentamos el timeout a 18 segundos para evitar bloqueos por lentitud de la API pública
+    response = requests.get(url, timeout=18)
     
     if response.status_code != 200:
       await update.message.reply_text(
-          "⚠️ El servidor de resultados está tardando en responder. "
-          "Inténtalo de nuevo en unos segundos."
+          "⚠️ El servidor externo de resultados está saturado. "
+          "Inténtalo de nuevo en un momento."
       )
       return
 
@@ -231,35 +232,4 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(mensaje) > 4000:
       mensaje = mensaje[:3950] + "\n\n_(Resultados recortados por límite)_"
 
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
-
-  except Exception as e:
-    logger.error(f"Error al conectar con la API pública de resultados: {e}")
-    await update.message.reply_text(
-        "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
-        "Inténtalo de nuevo en unos segundos."
-    )
-
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-  logger.error("Excepción al manejar una actualización:", exc_info=context.error)
-
-
-def run_bot():
-  print("Iniciando el bot con Bet Builders de 3 selecciones y hora de Colombia...")
-  application = ApplicationBuilder().token(TOKEN).build()
-
-  application.add_handler(CommandHandler("start", start))
-  application.add_handler(CommandHandler("combinadas", combinadas))
-  application.add_handler(CommandHandler("resultados", resultados))
-  application.add_error_handler(error_handler)
-
-  application.run_polling()
-
-
-if __name__ == "__main__":
-  web_thread = threading.Thread(target=run_web)
-  web_thread.daemon = True
-  web_thread.start()
-
-  run_bot()
+    await update.message
