@@ -55,7 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Analizando favoritos y generando los Bet Builders de 3 selecciones..."
+      "🔄 Analizando favoritos, eliminando duplicados y generando Bet Builders..."
   )
 
   url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal"
@@ -71,8 +71,19 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    total_partidos = len(data)
-    partidos_a_mostrar = data[:10]  # Muestra hasta 10 encuentros de la jornada
+    # FILTRO PARA EVITAR PARTIDOS DUPLICADOS EN LA CARTELERA
+    partidos_unicos = []
+    vistos = set()
+    for partido in data:
+      h = partido.get("home_team", "")
+      a = partido.get("away_team", "")
+      clave = f"{h}-{a}"
+      if clave not in vistos:
+        vistos.add(clave)
+        partidos_unicos.append(partido)
+
+    total_partidos = len(partidos_unicos)
+    partidos_a_mostrar = partidos_unicos[:10]  # Muestra hasta 10 encuentros únicos
 
     mensaje = f"🎯 **CARTELERA: BET BUILDERS INTELIGENTES (3 SELECCIONES)** 🌍⚽\n\n"
 
@@ -97,22 +108,27 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       except Exception:
         hora_col = "Hora por confirmar"
 
-      # Extraer cuotas base de la API para detectar quién es el verdadero favorito
+      # Extraer cuotas reales de la API para detectar favorito de mercado
       bookmakers = partido.get("bookmakers", [])
       cuota_local = 1.80
       cuota_visitante = 2.10
 
       if bookmakers:
-        markets = bookmakers[0].get("markets", [])
-        if markets:
-          outcomes = markets[0].get("outcomes", [])
-          for outcome in outcomes:
-            if outcome.get("name") == home_team:
-              cuota_local = outcome.get("price", 1.80)
-            elif outcome.get("name") == away_team:
-              cuota_visitante = outcome.get("price", 2.10)
+        for bm in bookmakers:
+          markets = bm.get("markets", [])
+          for market in markets:
+            if market.get("key") == "h2h":
+              outcomes = market.get("outcomes", [])
+              for outcome in outcomes:
+                name = outcome.get("name")
+                price = outcome.get("price", 1.80)
+                if name == home_team:
+                  cuota_local = price
+                elif name == away_team:
+                  cuota_visitante = price
+              break
 
-      # CORRECCIÓN DE SESGO: Si el visitante paga menos, es el favorito y usamos X2 en vez de 1X
+      # CORRECCIÓN DE SESGO DE FAVORITO (1X o X2 estricto)
       if cuota_visitante < cuota_local:
         doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
         c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
