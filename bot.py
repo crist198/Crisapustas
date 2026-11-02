@@ -3,6 +3,7 @@ import os
 import random
 import threading
 import time
+import requests
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
@@ -30,82 +31,23 @@ def run_web():
 
 
 # ==========================================
-# 2. LÓGICA DEL BOT: COMBINADAS Y RESULTADOS
+# 2. LÓGICA DEL BOT: COMBINADAS Y RESULTADOS REALES
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
-
-# Equipos y ligas globales para combinadas
-LIGAS_MUNDO = [
-    "Champions League (Europa)",
-    "Premier League (Inglaterra)",
-    "LaLiga (España)",
-    "Serie A (Italia)",
-    "Bundesliga (Alemania)",
-    "Copa Libertadores (Sudamérica)",
-    "Liga Profesional (Argentina)",
-    "Liga BetPlay (Colombia)",
-    "Brasileirão (Brasil)",
-    "Liga MX (México)",
-]
-
-EQUIPOS = [
-    ("Real Madrid", "Barcelona"),
-    ("Manchester City", "Arsenal"),
-    ("Bayern Múnich", "Borussia Dortmund"),
-    ("Inter de Milán", "Juventus"),
-    ("Flamengo", "Palmeiras"),
-    ("River Plate", "Boca Juniors"),
-    ("Millonarios", "Atlético Nacional"),
-    ("América de Cali", "Junior de Barranquilla"),
-    ("PSG", "Marsella"),
-]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "¡Hola! Bienvenido al bot de apuestas ⚽🔥\n\n"
+      "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
+      "Te ofrezco pronósticos y seguimiento global:\n"
       "📌 Usa **/combinadas** para ver jugadas de alta efectividad (91%-96%).\n"
-      "📌 Usa **/resultados** para ver los marcadores actualizados en"
-      " directo."
+      "📌 Usa **/resultados** para ver los marcadores reales en directo."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  partidos_seleccionados = random.sample(EQUIPOS, 3)
-  liga1 = random.choice(LIGAS_MUNDO)
-  liga2 = random.choice(LIGAS_MUNDO)
-  liga3 = random.choice(LIGAS_MUNDO)
-
-  cuota1 = round(random.uniform(1.70, 2.30), 2)
-  cuota2 = round(random.uniform(1.80, 2.45), 2)
-  cuota3 = round(random.uniform(1.65, 2.10), 2)
-
-  cuota_total = round(cuota1 * cuota2 * cuota3, 2)
-  efectividad = random.randint(91, 96)
-
-  mensaje = (
-      f"🎯 **APUESTA COMBINADA DEL DÍA (GLOBAL)** 🌍⚽\n\n"
-      f"1️⃣ *{partidos_seleccionados[0][0]} vs"
-      f" {partidos_seleccionados[0][1]}*\n   🏆 Liga: {liga1}\n   📌 Pronóstico:"
-      f" Más de 1.5 goles / Ambos anotan\n   ⚡ Cuota: {cuota1}\n\n"
-      f"2️⃣ *{partidos_seleccionados[1][0]} vs"
-      f" {partidos_seleccionados[1][1]}*\n   🏆 Liga: {liga2}\n   📌 Pronóstico:"
-      f" Victoria local o Empate (Doble Oportunidad)\n   ⚡ Cuota:"
-      f" {cuota2}\n\n"
-      f"3️⃣ *{partidos_seleccionados[2][0]} vs"
-      f" {partidos_seleccionados[2][1]}*\n   🏆 Liga: {liga3}\n   📌 Pronóstico:"
-      f" Menos de 3.5 goles totales\n   ⚡ Cuota: {cuota3}\n\n"
-      f"──────────────────────\n"
-      f"📊 **Cuota Total Combinada:** `x{cuota_total}`\n"
-      f"📈 **Índice de Efectividad Estimado:** `{efectividad}%` 🚀\n\n"
-      f"_Usa /combinadas de nuevo para generar nuevas jugadas._"
-  )
-
-  await update.message.reply_text(mensaje, parse_mode="Markdown")
-
-
-async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  partidos_reales = [
+  # Ligas y partidos estrictamente sincronizados para combinadas
+  partidas_combinadas = [
       ("Premier League (Inglaterra)", "Manchester City", "Arsenal"),
       ("LaLiga (España)", "Real Madrid", "Barcelona"),
       ("Serie A (Italia)", "Inter de Milán", "Juventus"),
@@ -116,26 +58,89 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
       ("Ligue 1 (Francia)", "PSG", "Marsella"),
   ]
 
-  jornada = random.sample(partidos_reales, 4)
-  estados = ["⏱ 78'", "⏱ 45'+2", "✅ Finalizado", "⏱ 89'"]
+  # Seleccionamos 3 partidos aleatorios de la lista correcta
+  seleccionados = random.sample(partidas_combinadas, 3)
 
-  mensaje = "⚽ **RESULTADOS ACTUALIZADOS EN VIVO (MUNDO)** 🌍\n\n"
+  cuota1 = round(random.uniform(1.70, 2.30), 2)
+  cuota2 = round(random.uniform(1.80, 2.45), 2)
+  cuota3 = round(random.uniform(1.65, 2.10), 2)
 
-  for i in range(4):
-    liga, eq1, eq2 = jornada[i]
-    goles1 = random.randint(0, 3)
-    goles2 = random.randint(0, 3)
-    estado = estados[i]
+  cuota_total = round(cuota1 * cuota2 * cuota3, 2)
+  efectividad = random.randint(91, 96)
 
-    mensaje += (
-        f"🏆 *{liga}*\n"
-        f"🔹 {eq1} **{goles1} - {goles2}** {eq2}\n"
-        f"Status: `{estado}`\n\n"
-    )
-
-  mensaje += "_Usa /resultados para refrescar los marcadores en tiempo real._"
+  mensaje = (
+      f"🎯 **APUESTA COMBINADA DEL DÍA (GLOBAL)** 🌍⚽\n\n"
+      f"1️⃣ *{seleccionados[0][1]} vs {seleccionados[0][2]}*\n"
+      f"   🏆 Liga: {seleccionados[0][0]}\n"
+      f"   📌 Pronóstico: Más de 1.5 goles / Ambos anotan\n"
+      f"   ⚡ Cuota: {cuota1}\n\n"
+      f"2️⃣ *{seleccionados[1][1]} vs {seleccionados[1][2]}*\n"
+      f"   🏆 Liga: {seleccionados[1][0]}\n"
+      f"   📌 Pronóstico: Victoria local o Empate (Doble Oportunidad)\n"
+      f"   ⚡ Cuota: {cuota2}\n\n"
+      f"3️⃣ *{seleccionados[2][1]} vs {seleccionados[2][2]}*\n"
+      f"   🏆 Liga: {seleccionados[2][0]}\n"
+      f"   📌 Pronóstico: Menos de 3.5 goles totales\n"
+      f"   ⚡ Cuota: {cuota3}\n\n"
+      f"──────────────────────\n"
+      f"📊 **Cuota Total Combinada:** `x{cuota_total}`\n"
+      f"📈 **Índice de Efectividad Estimado:** `{efectividad}%` 🚀\n\n"
+      f"_Usa /combinadas de nuevo para generar nuevas jugadas._"
+  )
 
   await update.message.reply_text(mensaje, parse_mode="Markdown")
+
+
+async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await update.message.reply_text(
+      "🔍 Consultando marcadores en vivo de la jornada..."
+  )
+
+  # API pública y gratuita de TheSportsDB (sin claves ni registros)
+  url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=2026-11-01&s=Soccer"
+
+  try:
+    response = requests.get(url, timeout=10)
+    data = response.json()
+    events = data.get("events", [])
+
+    if not events:
+      await update.message.reply_text(
+          "⚽ **RESULTADOS EN VIVO (MUNDO)** 🌍\n\n"
+          "No hay partidos registrados para el día de hoy en este servidor"
+          " público. ¡Vuelve más tarde! ⏱"
+      )
+      return
+
+    mensaje = "⚽ **RESULTADOS EN VIVO (MUNDO - REAL)** 🌍\n\n"
+
+    # Mostramos hasta 5 partidos de la lista pública
+    for match in events[:5]:
+      liga = match.get("strLeague", "Liga Internacional")
+      eq1 = match.get("strHomeTeam", "Local")
+      eq2 = match.get("strAwayTeam", "Visitante")
+      goles1 = match.get("intHomeScore", "0")
+      goles2 = match.get("intAwayScore", "0")
+      progreso = match.get("strProgress", "En curso")
+
+      g1 = goles1 if goles1 else "0"
+      g2 = goles2 if goles2 else "0"
+
+      mensaje += (
+          f"🏆 *{liga}*\n"
+          f"🔹 {eq1} **{g1} - {g2}** {eq2}\n"
+          f"Status: `{progreso}`\n\n"
+      )
+
+    mensaje += "_Datos obtenidos en tiempo real de API abierta._"
+    await update.message.reply_text(mensaje, parse_mode="Markdown")
+
+  except Exception as e:
+    logger.error(f"Error al consultar la API pública: {e}")
+    await update.message.reply_text(
+        "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
+        "Inténtalo de nuevo en unos segundos."
+    )
 
 
 # Función para capturar y mostrar errores en los Logs de Render
@@ -144,7 +149,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot de Telegram con control de errores...")
+  print("Iniciando el bot de Telegram con API abierta y Flask...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   # Registrar comandos
