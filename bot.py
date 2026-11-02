@@ -4,7 +4,6 @@ import os
 import random
 import threading
 import time
-
 zoneinfo_available = True
 try:
   from zoneinfo import ZoneInfo
@@ -31,7 +30,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-  return "¡El bot de apuestas y resultados @ApuestasCrisCol_bot está activo!"
+  return "¡El bot de apuestas @ApuestasCrisCol_bot está activo!"
 
 
 def run_web():
@@ -49,8 +48,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones corregido por favoritismo real, cuotas reales y hora exacta de Colombia.\n"
-      "📌 Usa **/resultados** para ver los marcadores reales en directo."
+      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones corregido por favoritismo real, cuotas reales y hora exacta de Colombia."
   )
 
 
@@ -175,78 +173,6 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
-  await update.message.reply_text(
-      "🔍 Consultando marcadores en vivo de la jornada..."
-  )
-
-  # Obtener la fecha actual dinámicamente en zona horaria de Colombia
-  if zoneinfo_available:
-    hoy_col = datetime.now(ZoneInfo("America/Bogota")).strftime("%Y-%m-%d")
-  else:
-    hoy_col = (datetime.utcnow() - timedelta(hours=5)).strftime("%Y-%m-%d")
-
-  url = f"https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d={hoy_col}&s=Soccer"
-
-  try:
-    # Aumentamos el timeout a 18 segundos para evitar bloqueos por lentitud de la API pública
-    response = requests.get(url, timeout=18)
-    
-    if response.status_code != 200:
-      await update.message.reply_text(
-          "⚠️ El servidor externo de resultados está saturado. "
-          "Inténtalo de nuevo en un momento."
-      )
-      return
-
-    data = response.json()
-    events = data.get("events", [])
-
-    if not events or not isinstance(events, list):
-      await update.message.reply_text(
-          f"⚽ **RESULTADOS EN VIVO ({hoy_col})** 🌍\n\n"
-          "No hay partidos de fútbol registrados para el día de hoy en este servidor público. ¡Vuelve más tarde! ⏱"
-      )
-      return
-
-    mensaje = f"⚽ **RESULTADOS EN VIVO (MUNDO - {hoy_col})** 🌍\n\n"
-
-    for match in events[:10]:
-      liga = match.get("strLeague", "Liga Internacional")
-      eq1 = match.get("strHomeTeam", "Local")
-      eq2 = match.get("strAwayTeam", "Visitante")
-      goles1 = match.get("intHomeScore", "0")
-      goles2 = match.get("intAwayScore", "0")
-      progreso = match.get("strProgress", "En curso")
-
-      g1 = goles1 if goles1 is not None else "0"
-      g2 = goles2 if goles2 is not None else "0"
-
-      mensaje += (
-          f"🏆 *{liga}*\n"
-          f"🔹 {eq1} **{g1} - {g2}** {eq2}\n"
-          f"Status: `{progreso if progreso else 'Programado/En juego'}`\n\n"
-      )
-
-    mensaje += "_Datos obtenidos en tiempo real de API abierta._"
-    
-    if len(mensaje) > 4000:
-      mensaje = mensaje[:3950] + "\n\n_(Resultados recortados por límite)_"
-
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
-
-  except requests.exceptions.Timeout:
-    await update.message.reply_text(
-        "⏱️ La consulta tardó demasiado debido a la alta congestión del servidor público de resultados. Inténtalo de nuevo en un momento."
-    )
-  except Exception as e:
-    logger.error(f"Error al conectar con la API pública de resultados: {e}")
-    await update.message.reply_text(
-        "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
-        "Inténtalo de nuevo en unos segundos."
-    )
-
-
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
   logger.error("Excepción al manejar una actualización:", exc_info=context.error)
 
@@ -257,7 +183,6 @@ def run_bot():
 
   application.add_handler(CommandHandler("start", start))
   application.add_handler(CommandHandler("combinadas", combinadas))
-  application.add_handler(CommandHandler("resultados", resultados))
   application.add_error_handler(error_handler)
 
   application.run_polling()
