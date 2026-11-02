@@ -4,6 +4,7 @@ import os
 import random
 import threading
 import time
+
 zoneinfo_available = True
 try:
   from zoneinfo import ZoneInfo
@@ -232,4 +233,39 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(mensaje) > 4000:
       mensaje = mensaje[:3950] + "\n\n_(Resultados recortados por límite)_"
 
-    await update.message
+    await update.message.reply_text(mensaje, parse_mode="Markdown")
+
+  except requests.exceptions.Timeout:
+    await update.message.reply_text(
+        "⏱️ La consulta tardó demasiado debido a la alta congestión del servidor público de resultados. Inténtalo de nuevo en un momento."
+    )
+  except Exception as e:
+    logger.error(f"Error al conectar con la API pública de resultados: {e}")
+    await update.message.reply_text(
+        "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
+        "Inténtalo de nuevo en unos segundos."
+    )
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+  logger.error("Excepción al manejar una actualización:", exc_info=context.error)
+
+
+def run_bot():
+  print("Iniciando el bot con Bet Builders de 3 selecciones y hora de Colombia...")
+  application = ApplicationBuilder().token(TOKEN).build()
+
+  application.add_handler(CommandHandler("start", start))
+  application.add_handler(CommandHandler("combinadas", combinadas))
+  application.add_handler(CommandHandler("resultados", resultados))
+  application.add_error_handler(error_handler)
+
+  application.run_polling()
+
+
+if __name__ == "__main__":
+  web_thread = threading.Thread(target=run_web)
+  web_thread.daemon = True
+  web_thread.start()
+
+  run_bot()
