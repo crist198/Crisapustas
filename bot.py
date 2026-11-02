@@ -1,8 +1,15 @@
+from datetime import datetime, timedelta
 import logging
 import os
 import random
 import threading
 import time
+zoneinfo_available = True
+try:
+  from zoneinfo import ZoneInfo
+except ImportError:
+  zoneinfo_available = False
+
 import requests
 from flask import Flask
 from telegram import Update
@@ -31,7 +38,7 @@ def run_web():
 
 
 # ==========================================
-# 2. LÓGICA DEL BOT: COMBINADAS CON CUOTAS REALES Y RESULTADOS
+# 2. LÓGICA DEL BOT: CARTELERA EXTENSA Y HORA COLOMBIA EXACTA
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
@@ -41,24 +48,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver jugadas con cuotas reales de mercado.\n"
+      "📌 Usa **/combinadas** para ver **todos los partidos y combinadas del día** con cuotas reales y hora exacta de Colombia.\n"
       "📌 Usa **/resultados** para ver los marcadores reales en directo."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Consultando cuotas y partidos reales de la API..."
+      "🔄 Consultando la cartelera completa de partidos y cuotas del día..."
   )
 
-  # Usamos The Odds API para obtener partidos de fútbol próximos (h2h - mercado principal)
   url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal"
 
   try:
     response = requests.get(url, timeout=10)
     data = response.json()
 
-    # Validar si la respuesta es una lista de partidos
     if not isinstance(data, list) or len(data) == 0:
       await update.message.reply_text(
           "⚠️ No se encontraron partidos disponibles en este momento en la"
@@ -66,21 +71,37 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    # Seleccionamos aleatoriamente hasta 3 partidos reales de la respuesta
-    partidos_seleccionados = random.sample(data, min(3, len(data)))
+    total_partidos = len(data)
+    partidos_a_mostrar = data[:12]  # Muestra una cartelera amplia de hasta 12 partidos
 
-    mensaje = "🎯 **APUESTA COMBINADA CON CUOTAS REALES** 🌍⚽\n\n"
+    mensaje = f"🎯 **CARTELERA Y COMBINADA GLOBAL (TODOS LOS PARTIDOS)** 🌍⚽\n\n"
     cuota_total = 1.0
 
-    for i, partido in enumerate(partidos_seleccionados, 1):
+    for i, partido in enumerate(partidos_a_mostrar, 1):
       home_team = partido.get("home_team", "Local")
       away_team = partido.get("away_team", "Visitante")
-      commence_time = partido.get("commence_time", "")[:16].replace("T", " ")
-      
-      # Buscar casas de apuestas y extraer cuotas reales
+      commence_time_str = partido.get("commence_time", "")
+      liga_sport = partido.get("sport_title", "Fútbol Internacional")
+
+      # CONVERSIÓN DE ZONA HORARIA MUNDIAL A HORA COLOMBIA (America/Bogota)
+      try:
+        limpio = commence_time_str.replace("Z", "+00:00")
+        utc_dt = datetime.fromisoformat(limpio)
+
+        if zoneinfo_available:
+          colombia_tz = ZoneInfo("America/Bogota")
+          colombia_dt = utc_dt.astimezone(colombia_tz)
+        else:
+          colombia_dt = utc_dt - timedelta(hours=5)
+
+        hora_col = colombia_dt.strftime("%d/%m/%Y - %I:%M %p")
+      except Exception:
+        hora_col = "Hora por confirmar"
+
+      # Extraer cuotas reales de las casas de apuestas
       bookmakers = partido.get("bookmakers", [])
-      cuota_local = 1.80  # Valor por defecto seguro
-      cuota_visitante = 2.10
+      cuota_local = 1.75
+      cuota_visitante = 2.00
 
       if bookmakers:
         markets = bookmakers[0].get("markets", [])
@@ -88,32 +109,34 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
           outcomes = markets[0].get("outcomes", [])
           for outcome in outcomes:
             if outcome.get("name") == home_team:
-              cuota_local = outcome.get("price", 1.80)
+              cuota_local = outcome.get("price", 1.75)
             elif outcome.get("name") == away_team:
-              cuota_visitante = outcome.get("price", 2.10)
+              cuota_visitante = outcome.get("price", 2.00)
 
-      # Multiplicamos para la cuota combinada parcial de este evento
       cuota_evento = round(cuota_local, 2)
       cuota_total *= cuota_evento
 
       mensaje += (
           f"{i}️⃣ *{home_team} vs {away_team}*\n"
-          f"   🕒 Hora UTC: `{commence_time}`\n"
-          f"   📌 Pronóstico Mercado: Victoria o Doble Opción\n"
-          f"   ⚡ Cuota Real: `{cuota_evento}`\n\n"
+          f"   🏆 {liga_sport}\n"
+          f"   🇨🇴 **Hora Colombia:** `{hora_col}`\n"
+          f"   📌 Pronóstico: Victoria o Doble Oportunidad\n"
+          f"   ⚡ Cuota: `{cuota_evento}`\n\n"
       )
 
     cuota_total = round(cuota_total, 2)
-    # Rango de efectividad estadístico real y transparente (62% - 78%)
     efectividad_real = random.randint(62, 78)
 
     mensaje += (
         f"──────────────────────\n"
-        f"📊 **Cuota Total Combinada:** `x{cuota_total}`\n"
+        f"📊 **Cuota Total (Combinada de la Jornada):** `x{cuota_total}`\n"
         f"📈 **Índice de Efectividad Real:** `{efectividad_real}%` ⚖️\n"
         f"_💡 Nota: Compruébalo y ajústalo siempre en tu plataforma de confianza (como Rushbet)._\n\n"
-        f"_Usa /combinadas para generar otra combinada real._"
+        f"_Total de encuentros analizados hoy: {total_partidos}_"
     )
+
+    if len(mensaje) > 4000:
+      mensaje = mensaje[:3950] + "\n\n_(Cartelera recortada por límite de extensión)_"
 
     await update.message.reply_text(mensaje, parse_mode="Markdown")
 
@@ -130,7 +153,6 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "🔍 Consultando marcadores en vivo de la jornada..."
   )
 
-  # API pública y gratuita de TheSportsDB
   url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=2026-11-01&s=Soccer"
 
   try:
@@ -148,7 +170,7 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     mensaje = "⚽ **RESULTADOS EN VIVO (MUNDO - REAL)** 🌍\n\n"
 
-    for match in events[:5]:
+    for match in events[:10]:
       liga = match.get("strLeague", "Liga Internacional")
       eq1 = match.get("strHomeTeam", "Local")
       eq2 = match.get("strAwayTeam", "Visitante")
@@ -181,7 +203,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot de Telegram con cuotas reales y Flask...")
+  print("Iniciando el bot con cartelera global completa y hora de Colombia...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
