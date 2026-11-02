@@ -49,23 +49,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido al asistente **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones, divididos en partes automáticas."
+      "📌 Usa **/combinadas** para ver **partidos con al menos 30 minutos de anticipación** con su Bet Builder de 3 selecciones."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Conectando con el servidor de cuotas y escaneando cartelera..."
+      "🔄 Escaneando cartelera, aplicando margen de 30 minutos de anticipación..."
   )
 
-  # Consultamos con regiones múltiples (Europa y US/Global) para asegurar que la API devuelva partidos activos
   url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu,us&markets=h2h&oddsFormat=decimal"
 
   try:
     response = requests.get(url, timeout=15)
     data = response.json()
 
-    # Depuración por si la API devuelve un diccionario de error
     if isinstance(data, dict) and "message" in data:
       logger.error(f"Error devuelto por la API: {data['message']}")
       await update.message.reply_text(
@@ -79,21 +77,59 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       )
       return
 
-    # FILTRO PARA EVITAR PARTIDOS DUPLICADOS EN LA CARTELERA
-    partidos_unicos = []
+    # Definir la hora actual en Colombia y sumarle 30 minutos de margen de anticipación
+    if zoneinfo_available:
+      try:
+        colombia_tz = ZoneInfo("America/Bogota")
+        ahora_col = datetime.now(colombia_tz)
+      except Exception:
+        ahora_col = datetime.now() - timedelta(hours=5)
+    else:
+      ahora_col = datetime.utcnow() - timedelta(hours=5)
+
+    limite_anticipacion = ahora_col + timedelta(minutes=30)
+
+    # FILTRAR PARTIDOS: ELIMINAR DUPLICADOS Y LOS QUE TENGAN MENOS DE 30 MINUTOS PARA EMPEZAR
+    partidos_validos = []
     vistos = set()
+
     for partido in data:
       h = partido.get("home_team", "")
       a = partido.get("away_team", "")
       clave = f"{h}-{a}"
+      
+      commence_time_str = partido.get("commence_time", "")
+      try:
+        limpio = commence_time_str.replace("Z", "+00:00")
+        utc_dt = datetime.fromisoformat(limpio)
+        
+        # Convertir a hora Colombia
+        if zoneinfo_available:
+          partido_col_dt = utc_dt.astimezone(ZoneInfo("America/Bogota"))
+        else:
+          partido_col_dt = utc_dt - timedelta(hours=5)
+
+        # SI EL PARTIDO EMPIEZA ANTES DE LOS 30 MINUTOS DE MARGEN, LO DESCARTAMOS
+        if partido_col_dt < limite_anticipacion:
+          continue
+
+      except Exception:
+        continue
+
       if clave not in vistos:
         vistos.add(clave)
-        partidos_unicos.append(partido)
+        partidos_validos.append(partido)
 
-    total_partidos = len(partidos_unicos)
-    
-    # Tomamos hasta 30 partidos para asegurar que entren todos los disponibles
-    partidos_a_mostrar = partidos_unicos[:30]
+    total_partidos = len(partidos_validos)
+
+    if total_partidos == 0:
+      await update.message.reply_text(
+          "⚠️ No hay partidos disponibles con al menos 30 minutos de anticipación para lo que resta del día."
+      )
+      return
+
+    # Tomamos hasta 30 partidos válidos
+    partidos_a_mostrar = partidos_validos[:30]
 
     # Dividir en bloques de máximo 6 partidos (hasta 5 mensajes en total)
     tamanio_bloque = 6
@@ -108,7 +144,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       if not bloque_partidos:
         continue
 
-      mensaje = f"🎯 **CARTELERA GLOBAL: BET BUILDERS (Parte {index}/{total_bloques})** 🌍⚽\n\n"
+      mensaje = f"🎯 **CARTELERA CON 30MIN+ DE ANTICIPACIÓN (Parte {index}/{total_bloques})** 🌍⚽\n\n"
 
       for i, partido in enumerate(bloque_partidos, 1):
         num_real = (index - 1) * tamanio_bloque + i
@@ -200,10 +236,10 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
       if index == total_bloques:
-        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal analizados globalmente hoy: {total_partidos}_"
+        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal partidos con +30min de anticipación: {total_partidos}_"
 
       await update.message.reply_text(mensaje, parse_mode="Markdown")
-      time.sleep(0.7)  # Pausa breve para asegurar orden en Telegram
+      time.sleep(0.7)  # Pausa breve para orden en Telegram
 
   except Exception as e:
     logger.error(f"Error al consultar The Odds API: {e}")
@@ -213,12 +249,12 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+async def error_handler(object, context: ContextTypes.DEFAULT_TYPE):
   logger.error("Excepción al manejar una actualización:", exc_info=context.error)
 
 
 def run_bot():
-  print("Iniciando el bot con regiones múltiples y cartelera ampliada...")
+  print("Iniciando el bot con filtro de 30 minutos de anticipación...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
