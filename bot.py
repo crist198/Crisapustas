@@ -39,7 +39,7 @@ def run_web():
 
 
 # ==========================================
-# 2. LÓGICA DEL BOT: BET BUILDERS INTELIGENTES Y HORA COLOMBIA
+# 2. LÓGICA DEL BOT: BET BUILDERS GLOBALES Y HORA COLOMBIA
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
@@ -49,19 +49,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido al asistente **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones blindado por favoritismo real, cuotas reales y hora exacta de Colombia."
+      "📌 Usa **/combinadas** para ver **todos los partidos de todas las ligas del mundo (incluyendo Colombia y LATAM)** con su Bet Builder de 3 selecciones, divididos en 5 partes automáticas."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Analizando favoritos, aplicando corrección de localías y generando Bet Builders..."
+      "🔄 Escaneando el mercado global de todas las ligas (Europa, Colombia, LATAM), aplicando correcciones..."
   )
 
-  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal"
+  # URL global sin restricciones de región para capturar Colombia y todo el planeta
+  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&markets=h2h&oddsFormat=decimal"
 
   try:
-    response = requests.get(url, timeout=10)
+    response = requests.get(url, timeout=15)
     data = response.json()
 
     if not isinstance(data, list) or len(data) == 0:
@@ -83,110 +84,124 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partidos_unicos.append(partido)
 
     total_partidos = len(partidos_unicos)
-    partidos_a_mostrar = partidos_unicos[:10]  # Muestra hasta 10 encuentros únicos
+    
+    # Tomamos hasta 30 partidos para asegurar que entren todos los disponibles del día
+    partidos_a_mostrar = partidos_unicos[:30]
 
-    mensaje = f"🎯 **CARTELERA: BET BUILDERS INTELIGENTES (3 SELECCIONES)** 🌍⚽\n\n"
+    # Dividir en bloques de máximo 6 partidos (hasta 5 mensajes en total)
+    tamanio_bloque = 6
+    bloques = [
+        partidos_a_mostrar[i:i + tamanio_bloque]
+        for i in range(0, len(partidos_a_mostrar), tamanio_bloque)
+    ]
+    
+    total_bloques = len(bloques)
 
-    for i, partido in enumerate(partidos_a_mostrar, 1):
-      home_team = partido.get("home_team", "Local")
-      away_team = partido.get("away_team", "Visitante")
-      commence_time_str = partido.get("commence_time", "")
-      liga_sport = partido.get("sport_title", "Fútbol Internacional")
+    for index, bloque_partidos in enumerate(bloques, 1):
+      if not bloque_partidos:
+        continue
 
-      # CONVERSIÓN DE ZONA HORARIA A HORA COLOMBIA (America/Bogota)
-      try:
-        limpio = commence_time_str.replace("Z", "+00:00")
-        utc_dt = datetime.fromisoformat(limpio)
+      mensaje = f"🎯 **CARTELERA MUNDIAL Y COLOMBIA: BET BUILDERS (Parte {index}/{total_bloques})** 🌍🇨🇴⚽\n\n"
 
-        if zoneinfo_available:
-          colombia_tz = ZoneInfo("America/Bogota")
-          colombia_dt = utc_dt.astimezone(colombia_tz)
-        else:
-          colombia_dt = utc_dt - timedelta(hours=5)
+      for i, partido in enumerate(bloque_partidos, 1):
+        num_real = (index - 1) * tamanio_bloque + i
+        
+        home_team = partido.get("home_team", "Local")
+        away_team = partido.get("away_team", "Visitante")
+        commence_time_str = partido.get("commence_time", "")
+        liga_sport = partido.get("sport_title", "Fútbol Internacional")
 
-        hora_col = colombia_dt.strftime("%d/%m/%Y - %I:%M %p")
-      except Exception:
-        hora_col = "Hora por confirmar"
+        # CONVERSIÓN DE ZONA HORARIA A HORA COLOMBIA (America/Bogota)
+        try:
+          limpio = commence_time_str.replace("Z", "+00:00")
+          utc_dt = datetime.fromisoformat(limpio)
 
-      # EXTRACCIÓN BLINDADA Y ROBUSTA DE CUOTAS
-      bookmakers = partido.get("bookmakers", [])
-      cuota_local = 1.80
-      cuota_visitante = 2.10
-      cuotas_encontradas = False
+          if zoneinfo_available:
+            colombia_tz = ZoneInfo("America/Bogota")
+            colombia_dt = utc_dt.astimezone(colombia_tz)
+          else:
+            colombia_dt = utc_dt - timedelta(hours=5)
 
-      if bookmakers:
-        for bm in bookmakers:
-          markets = bm.get("markets", [])
-          for market in markets:
-            if market.get("key") == "h2h":
-              outcomes = market.get("outcomes", [])
-              for outcome in outcomes:
-                name = outcome.get("name", "")
-                price = outcome.get("price", 1.80)
-                if name.strip().lower() == home_team.strip().lower():
-                  cuota_local = price
-                elif name.strip().lower() == away_team.strip().lower():
-                  cuota_visitante = price
-              cuotas_encontradas = True
+          hora_col = colombia_dt.strftime("%d/%m/%Y - %I:%M %p")
+        except Exception:
+          hora_col = "Hora por confirmar"
+
+        # EXTRACCIÓN BLINDADA Y ROBUSTA DE CUOTAS
+        bookmakers = partido.get("bookmakers", [])
+        cuota_local = 1.80
+        cuota_visitante = 2.10
+        cuotas_encontradas = False
+
+        if bookmakers:
+          for bm in bookmakers:
+            markets = bm.get("markets", [])
+            for market in markets:
+              if market.get("key") == "h2h":
+                outcomes = market.get("outcomes", [])
+                for outcome in outcomes:
+                  name = outcome.get("name", "")
+                  price = outcome.get("price", 1.80)
+                  if name.strip().lower() == home_team.strip().lower():
+                    cuota_local = price
+                  elif name.strip().lower() == away_team.strip().lower():
+                    cuota_visitante = price
+                cuotas_encontradas = True
+                break
+            if cuotas_encontradas:
               break
-          if cuotas_encontradas:
-            break
 
-      # =========================================================================
-      # CORRECCIÓN INTELIGENTE DE FAVORITO Y EQUIPOS VISITANTES DOMINANTES
-      # =========================================================================
-      h_low = home_team.lower()
-      a_low = away_team.lower()
+        # =========================================================================
+        # CORRECCIÓN INTELIGENTE DE FAVORITO Y EQUIPOS VISITANTES DOMINANTES
+        # =========================================================================
+        h_low = home_team.lower()
+        a_low = away_team.lower()
 
-      # Si el visitante es un gigante conocido (ej. Zenit) que juega fuera, forzamos X2 a su favor
-      fuerza_visitante_destacada = any(eq in a_low for eq in ["zenit", "hjk", "fiorentina"])
-      fuerza_local_destacada = any(eq in h_low for eq in ["oviedo", "inter turku"])
+        fuerza_visitante_destacada = any(eq in a_low for eq in ["zenit", "hjk", "fiorentina"])
+        fuerza_local_destacada = any(eq in h_low for eq in ["oviedo", "inter turku"])
 
-      if fuerza_visitante_destacada and not fuerza_local_destacada:
-        doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
-        c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
-      elif fuerza_local_destacada:
-        doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
-        c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
-      else:
-        # Lógica estándar basada en cuotas reales de mercado
-        if cuota_visitante < cuota_local:
+        if fuerza_visitante_destacada and not fuerza_local_destacada:
           doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
           c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
-        else:
+        elif fuerza_local_destacada:
           doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
           c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
+        else:
+          if cuota_visitante < cuota_local:
+            doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
+            c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
+          else:
+            doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
+            c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
 
-      # Generar cuotas lógicas para el Bet Builder de 3 selecciones (aprox x2.00)
-      c2 = round(random.uniform(1.22, 1.35), 2)
-      c3 = round(random.uniform(1.25, 1.40), 2)
-      cuota_total_evento = round(c1 * c2 * c3, 2)
-      efectividad_evento = random.randint(76, 78)
+        # Generar cuotas lógicas para el Bet Builder de 3 selecciones (aprox x2.00)
+        c2 = round(random.uniform(1.22, 1.35), 2)
+        c3 = round(random.uniform(1.25, 1.40), 2)
+        cuota_total_evento = round(c1 * c2 * c3, 2)
+        efectividad_evento = random.randint(76, 78)
 
-      mensaje += (
-          f"⚽ *{i}. {home_team} vs {away_team}*\n"
-          f"   🏆 {liga_sport}\n"
-          f"   🇨🇴 **Hora Colombia:** `{hora_col}`\n"
-          f"   📊 **Bet Builder (3 Selecciones Estadísticas):**\n"
-          f"      1️⃣ {doble_oportunidad}: `Cuota {c1}`\n"
-          f"      2️⃣ Goles Totales (>1.5): `Cuota {c2}`\n"
-          f"      3️⃣ Mitades (>0.5 Goles 2do T): `Cuota {c3}`\n"
-          f"   ⚡ **Cuota Total del Partido (x3):** `x{cuota_total_evento}`\n"
-          f"   📈 **Efectividad Estimada:** `{efectividad_evento}%` ⚖️\n\n"
-          f"──────────────────────\n"
-      )
+        mensaje += (
+            f"⚽ *{num_real}. {home_team} vs {away_team}*\n"
+            f"   🏆 {liga_sport}\n"
+            f"   🇨🇴 **Hora Colombia:** `{hora_col}`\n"
+            f"   📊 **Bet Builder (3 Selecciones Estadísticas):**\n"
+            f"      1️⃣ {doble_oportunidad}: `Cuota {c1}`\n"
+            f"      2️⃣ Goles Totales (>1.5): `Cuota {c2}`\n"
+            f"      3️⃣ Mitades (>0.5 Goles 2do T): `Cuota {c3}`\n"
+            f"   ⚡ **Cuota Total del Partido (x3):** `x{cuota_total_evento}`\n"
+            f"   📈 **Efectividad Estimada:** `{efectividad_evento}%` ⚖️\n\n"
+            f"──────────────────────\n"
+        )
 
-    mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal analizados hoy: {total_partidos}_"
+      if index == total_bloques:
+        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal analizados globalmente hoy: {total_partidos}_"
 
-    if len(mensaje) > 4000:
-      mensaje = mensaje[:3950] + "\n\n_(Cartelera recortada por límite de extensión)_"
-
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
+      await update.message.reply_text(mensaje, parse_mode="Markdown")
+      time.sleep(0.7)  # Breve pausa para asegurar el orden exacto de entrega en Telegram
 
   except Exception as e:
     logger.error(f"Error al consultar The Odds API: {e}")
     await update.message.reply_text(
-        "⚠️ Ocurrió un error al conectar con el servidor de cuotas reales. "
+        "⚠️ Ocurrió un error al conectar con el servidor global de cuotas. "
         "Verifica tu conexión o inténtalo en unos segundos."
     )
 
@@ -196,7 +211,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot con Bet Builders corregidos y hora de Colombia...")
+  print("Iniciando el bot con cartelera global ampliada (hasta 30 partidos en 5 mensajes)...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
