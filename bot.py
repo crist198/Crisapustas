@@ -108,7 +108,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       except Exception:
         hora_col = "Hora por confirmar"
 
-      # Extraer cuotas reales de la API para detectar favorito de mercado
+      # Extraer cuotas reales de la API con validación robusta de nombres
       bookmakers = partido.get("bookmakers", [])
       cuota_local = 1.80
       cuota_visitante = 2.10
@@ -120,11 +120,11 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if market.get("key") == "h2h":
               outcomes = market.get("outcomes", [])
               for outcome in outcomes:
-                name = outcome.get("name")
+                name = outcome.get("name", "")
                 price = outcome.get("price", 1.80)
-                if name == home_team:
+                if name.strip().lower() == home_team.strip().lower():
                   cuota_local = price
-                elif name == away_team:
+                elif name.strip().lower() == away_team.strip().lower():
                   cuota_visitante = price
               break
 
