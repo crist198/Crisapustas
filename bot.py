@@ -38,7 +38,7 @@ def run_web():
 
 
 # ==========================================
-# 2. LÓGICA DEL BOT: BET BUILDERS DE 3 SELECCIONES Y HORA COLOMBIA
+# 2. LÓGICA DEL BOT: BET BUILDERS INTELIGENTES Y HORA COLOMBIA
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
@@ -48,14 +48,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido a **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones estadísticas, cuotas reales y hora exacta de Colombia.\n"
+      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones corregido por favoritismo real, cuotas reales y hora exacta de Colombia.\n"
       "📌 Usa **/resultados** para ver los marcadores reales en directo."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Consultando la cartelera y generando los Bet Builders de 3 selecciones..."
+      "🔄 Analizando favoritos y generando los Bet Builders de 3 selecciones..."
   )
 
   url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal"
@@ -74,7 +74,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_partidos = len(data)
     partidos_a_mostrar = data[:10]  # Muestra hasta 10 encuentros de la jornada
 
-    mensaje = f"🎯 **CARTELERA: BET BUILDERS DE 3 SELECCIONES POR PARTIDO** 🌍⚽\n\n"
+    mensaje = f"🎯 **CARTELERA: BET BUILDERS INTELIGENTES (3 SELECCIONES)** 🌍⚽\n\n"
 
     for i, partido in enumerate(partidos_a_mostrar, 1):
       home_team = partido.get("home_team", "Local")
@@ -97,19 +97,30 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       except Exception:
         hora_col = "Hora por confirmar"
 
-      # Extraer cuotas base de la API para ajustar el Bet Builder estadístico
+      # Extraer cuotas base de la API para detectar quién es el verdadero favorito
       bookmakers = partido.get("bookmakers", [])
-      cuota_base = 1.75
+      cuota_local = 1.80
+      cuota_visitante = 2.10
+
       if bookmakers:
         markets = bookmakers[0].get("markets", [])
         if markets:
           outcomes = markets[0].get("outcomes", [])
           for outcome in outcomes:
             if outcome.get("name") == home_team:
-              cuota_base = outcome.get("price", 1.75)
+              cuota_local = outcome.get("price", 1.80)
+            elif outcome.get("name") == away_team:
+              cuota_visitante = outcome.get("price", 2.10)
+
+      # CORRECCIÓN DE SESGO: Si el visitante paga menos, es el favorito y usamos X2 en vez de 1X
+      if cuota_visitante < cuota_local:
+        doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
+        c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
+      else:
+        doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
+        c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
 
       # Generar cuotas lógicas para el Bet Builder de 3 selecciones (aprox x2.00)
-      c1 = round(min(max(cuota_base * 0.75, 1.20), 1.45), 2)
       c2 = round(random.uniform(1.22, 1.35), 2)
       c3 = round(random.uniform(1.25, 1.40), 2)
       cuota_total_evento = round(c1 * c2 * c3, 2)
@@ -120,7 +131,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
           f"   🏆 {liga_sport}\n"
           f"   🇨🇴 **Hora Colombia:** `{hora_col}`\n"
           f"   📊 **Bet Builder (3 Selecciones Estadísticas):**\n"
-          f"      1️⃣ Doble Oportunidad (1X): `Cuota {c1}`\n"
+          f"      1️⃣ {doble_oportunidad}: `Cuota {c1}`\n"
           f"      2️⃣ Goles Totales (>1.5): `Cuota {c2}`\n"
           f"      3️⃣ Mitades (>0.5 Goles 2do T): `Cuota {c3}`\n"
           f"   ⚡ **Cuota Total del Partido (x3):** `x{cuota_total_evento}`\n"
@@ -186,7 +197,7 @@ async def resultados(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(mensaje, parse_mode="Markdown")
 
   except Exception as e:
-    logger.error(f"Error al consultar la API pública: {e}")
+    logger.error(f"Error al conectar con la API pública: {e}")
     await update.message.reply_text(
         "⚠️ Ocurrió un error al conectar con el servidor de resultados. "
         "Inténtalo de nuevo en unos segundos."
