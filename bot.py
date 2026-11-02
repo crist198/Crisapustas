@@ -49,26 +49,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido al asistente **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver **todos los partidos de todas las ligas del mundo (incluyendo Colombia y LATAM)** con su Bet Builder de 3 selecciones, divididos en 5 partes automáticas."
+      "📌 Usa **/combinadas** para ver **todos los partidos del día** con su Bet Builder de 3 selecciones, divididos en partes automáticas."
   )
 
 
 async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
-      "🔄 Escaneando el mercado global de todas las ligas (Europa, Colombia, LATAM), aplicando correcciones..."
+      "🔄 Conectando con el servidor de cuotas y escaneando cartelera..."
   )
 
-  # URL global sin restricciones de región para capturar Colombia y todo el planeta
-  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&markets=h2h&oddsFormat=decimal"
+  # Consultamos con regiones múltiples (Europa y US/Global) para asegurar que la API devuelva partidos activos
+  url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu,us&markets=h2h&oddsFormat=decimal"
 
   try:
     response = requests.get(url, timeout=15)
     data = response.json()
 
+    # Depuración por si la API devuelve un diccionario de error
+    if isinstance(data, dict) and "message" in data:
+      logger.error(f"Error devuelto por la API: {data['message']}")
+      await update.message.reply_text(
+          f"⚠️ Error de la API: {data['message']}"
+      )
+      return
+
     if not isinstance(data, list) or len(data) == 0:
       await update.message.reply_text(
-          "⚠️ No se encontraron partidos disponibles en este momento en la"
-          " API de cuotas. Inténtalo más tarde."
+          "⚠️ No se encontraron partidos disponibles en este momento en la API de cuotas. Inténtalo más tarde."
       )
       return
 
@@ -85,7 +92,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     total_partidos = len(partidos_unicos)
     
-    # Tomamos hasta 30 partidos para asegurar que entren todos los disponibles del día
+    # Tomamos hasta 30 partidos para asegurar que entren todos los disponibles
     partidos_a_mostrar = partidos_unicos[:30]
 
     # Dividir en bloques de máximo 6 partidos (hasta 5 mensajes en total)
@@ -101,7 +108,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       if not bloque_partidos:
         continue
 
-      mensaje = f"🎯 **CARTELERA MUNDIAL Y COLOMBIA: BET BUILDERS (Parte {index}/{total_bloques})** 🌍🇨🇴⚽\n\n"
+      mensaje = f"🎯 **CARTELERA GLOBAL: BET BUILDERS (Parte {index}/{total_bloques})** 🌍⚽\n\n"
 
       for i, partido in enumerate(bloque_partidos, 1):
         num_real = (index - 1) * tamanio_bloque + i
@@ -196,7 +203,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal analizados globalmente hoy: {total_partidos}_"
 
       await update.message.reply_text(mensaje, parse_mode="Markdown")
-      time.sleep(0.7)  # Breve pausa para asegurar el orden exacto de entrega en Telegram
+      time.sleep(0.7)  # Pausa breve para asegurar orden en Telegram
 
   except Exception as e:
     logger.error(f"Error al consultar The Odds API: {e}")
@@ -211,7 +218,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot con cartelera global ampliada (hasta 30 partidos en 5 mensajes)...")
+  print("Iniciando el bot con regiones múltiples y cartelera ampliada...")
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
