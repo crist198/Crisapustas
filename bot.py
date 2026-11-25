@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import html
 import logging
 import os
 import random
@@ -12,7 +13,6 @@ try:
 except ImportError:
   zoneinfo_available = False
 
-from bs4 import BeautifulSoup
 import requests
 from flask import Flask
 from telegram import Update
@@ -49,7 +49,7 @@ TIPSTRR_LEAST_EXPECTED_URL = "https://tipstrr.com/tipster/the-least-expected"
 
 
 def obtener_stats_least_expected():
-  """Consulta el perfil público de The Least Expected en Tipstrr."""
+  """Consulta el perfil público de The Least Expected en Tipstrr sin dependencias extra."""
   headers = {
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -59,8 +59,10 @@ def obtener_stats_least_expected():
   try:
     resp = requests.get(TIPSTRR_LEAST_EXPECTED_URL, headers=headers, timeout=15)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    texto = " ".join(soup.get_text(" ", strip=True).split())
+
+    raw_html = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=re.S | re.I)
+    sin_tags = re.sub(r"<[^>]+>", " ", raw_html)
+    texto = " ".join(html.unescape(sin_tags).split())
 
     roi_match = re.search(r"ROI[:\s]+([+-]?\d+(?:\.\d+)?%)", texto, re.IGNORECASE)
     profit_match = re.search(
@@ -74,10 +76,9 @@ def obtener_stats_least_expected():
         re.IGNORECASE,
     )
 
-    # Extraer posibles líneas de pronósticos recientes si son visibles en el HTML público
     picks = []
-    for item in soup.select("table tr, .tip-item, .pick-item, li")[:25]:
-      linea = " ".join(item.get_text(" ", strip=True).split())
+    for bloque in re.split(r"(?<=[.!?])\s+|\s{2,}", texto):
+      linea = bloque.strip()
       if len(linea) > 15 and ("vs" in linea.lower() or "@" in linea.lower()):
         picks.append(linea[:140])
       if len(picks) >= 5:
