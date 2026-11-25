@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import logging
 import os
 import random
+import re
 import threading
 import time
 
@@ -11,6 +12,7 @@ try:
 except ImportError:
   zoneinfo_available = False
 
+from bs4 import BeautifulSoup
 import requests
 from flask import Flask
 from telegram import Update
@@ -43,13 +45,96 @@ def run_web():
 # ==========================================
 TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
+TIPSTRR_LEAST_EXPECTED_URL = "https://tipstrr.com/tipster/the-least-expected"
+
+
+def obtener_stats_least_expected():
+  """Consulta el perfil público de The Least Expected en Tipstrr."""
+  headers = {
+      "User-Agent": (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+          "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+      )
+  }
+  try:
+    resp = requests.get(TIPSTRR_LEAST_EXPECTED_URL, headers=headers, timeout=15)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    texto = " ".join(soup.get_text(" ", strip=True).split())
+
+    roi_match = re.search(r"ROI[:\s]+([+-]?\d+(?:\.\d+)?%)", texto, re.IGNORECASE)
+    profit_match = re.search(
+        r"(?:Profit|Beneficio)[:\s]+([+-]?[£$€]?\d+(?:,\d{3})*(?:\.\d+)?)",
+        texto,
+        re.IGNORECASE,
+    )
+    win_match = re.search(
+        r"(?:Win Rate|Strike Rate|Acierto)[:\s]+(\d+(?:\.\d+)?%)",
+        texto,
+        re.IGNORECASE,
+    )
+
+    # Extraer posibles líneas de pronósticos recientes si son visibles en el HTML público
+    picks = []
+    for item in soup.select("table tr, .tip-item, .pick-item, li")[:25]:
+      linea = " ".join(item.get_text(" ", strip=True).split())
+      if len(linea) > 15 and ("vs" in linea.lower() or "@" in linea.lower()):
+        picks.append(linea[:140])
+      if len(picks) >= 5:
+        break
+
+    return {
+        "disponible": True,
+        "roi": roi_match.group(1) if roi_match else "Ver perfil en Tipstrr",
+        "beneficio": profit_match.group(1) if profit_match else "Ver perfil en Tipstrr",
+        "acierto": win_match.group(1) if win_match else "Ver perfil en Tipstrr",
+        "picks": picks,
+        "url": TIPSTRR_LEAST_EXPECTED_URL,
+    }
+  except Exception as e:
+    logger.error(f"Error consultando The Least Expected en Tipstrr: {e}")
+    return {
+        "disponible": False,
+        "error": str(e),
+        "url": TIPSTRR_LEAST_EXPECTED_URL,
+    }
+
+
+async def least_expected_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+  await update.message.reply_text(
+      "📊 Consultando estadísticas y pronósticos públicos de **The Least Expected** (Tipstrr)...",
+      parse_mode="Markdown",
+  )
+  datos = obtener_stats_least_expected()
+  if not datos["disponible"]:
+    await update.message.reply_text(
+        f"⚠️ No se pudo leer el perfil público de **The Least Expected** en este momento.\n"
+        f"🔗 Consulta directa: {datos['url']}",
+        parse_mode="Markdown",
+    )
+    return
+
+  msg = (
+      "🏆 **The Least Expected (Tipstrr - Fútbol)**\n"
+      f"📈 **ROI:** `{datos['roi']}`\n"
+      f"💰 **Beneficio:** `{datos['beneficio']}`\n"
+      f"🎯 **Acierto:** `{datos['acierto']}`\n"
+  )
+  if datos["picks"]:
+    msg += "\n📌 **Picks / registros visibles:**\n"
+    for p in datos["picks"]:
+      msg += f"• {p}\n"
+  msg += f"\n🔗 Fuente: {datos['url']}"
+
+  await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "¡Hola! Bienvenido al asistente **@ApuestasCrisCol_bot** ⚽🔥\n\n"
       "Te ofrezco pronósticos y seguimiento real:\n"
-      "📌 Usa **/combinadas** para ver la **cartelera masiva global ampliada** con al menos 30 minutos de anticipación y su Bet Builder de 3 selecciones."
+      "📌 Usa **/combinadas** para ver la **cartelera masiva global ampliada** con al menos 30 minutos de anticipación y su Bet Builder de 3 selecciones.\n"
+      "📌 Usa **/leastexpected** para ver los datos y resultados públicos de **The Least Expected**."
   )
 
 
@@ -98,12 +183,12 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
       h = partido.get("home_team", "")
       a = partido.get("away_team", "")
       clave = f"{h}-{a}"
-      
+
       commence_time_str = partido.get("commence_time", "")
       try:
         limpio = commence_time_str.replace("Z", "+00:00")
         utc_dt = datetime.fromisoformat(limpio)
-        
+
         # Convertir a hora Colombia
         if zoneinfo_available:
           partido_col_dt = utc_dt.astimezone(ZoneInfo("America/Bogota"))
@@ -138,8 +223,11 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
         partidos_a_mostrar[i:i + tamanio_bloque]
         for i in range(0, len(partidos_a_mostrar), tamanio_bloque)
     ]
-    
+
     total_bloques = len(bloques)
+
+    # Obtener resumen de The Least Expected para incluirlo al final de /combinadas
+    least_exp = obtener_stats_least_expected()
 
     for index, bloque_partidos in enumerate(bloques, 1):
       if not bloque_partidos:
@@ -149,7 +237,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
       for i, partido in enumerate(bloque_partidos, 1):
         num_real = (index - 1) * tamanio_bloque + i
-        
+
         home_team = partido.get("home_team", "Local")
         away_team = partido.get("away_team", "Visitante")
         commence_time_str = partido.get("commence_time", "")
@@ -238,6 +326,11 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
       if index == total_bloques:
         mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal partidos globales analizados: {total_partidos}_"
+        if least_exp.get("disponible"):
+          mensaje += (
+              f"\n\n🏆 **The Least Expected (Tipstrr):** "
+              f"ROI `{least_exp['roi']}` | Beneficio `{least_exp['beneficio']}` | Acierto `{least_exp['acierto']}`"
+          )
 
       await update.message.reply_text(mensaje, parse_mode="Markdown")
       time.sleep(0.7)  # Pausa breve para orden en Telegram
@@ -260,6 +353,7 @@ def run_bot():
 
   application.add_handler(CommandHandler("start", start))
   application.add_handler(CommandHandler("combinadas", combinadas))
+  application.add_handler(CommandHandler("leastexpected", least_expected_cmd))
   application.add_error_handler(error_handler)
 
   application.run_polling()
