@@ -43,7 +43,7 @@ def run_web():
 # ==========================================
 # 2. LÓGICA DEL BOT: BET BUILDERS MASIVOS GLOBALES Y HORA COLOMBIA
 # ==========================================
-TOKEN = "9077971398:AAH2XqvVKpnIvvzd_ytVxfNtvxAVPVcs5Xs"
+TOKEN = os.getenv("TELEGRAM_TOKEN", "9077971398:AAHazVQzDFwfrkciKH3hDyB3wBJ8mfVeRY8")
 ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
 TIPSTRR_LEAST_EXPECTED_URL = "https://tipstrr.com/tipster/the-least-expected"
 
