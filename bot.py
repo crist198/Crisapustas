@@ -1,11 +1,10 @@
+import asyncio
 from datetime import datetime, timedelta
 import html
 import logging
 import os
-import random
 import re
 import threading
-import time
 
 zoneinfo_available = True
 try:
@@ -13,10 +12,10 @@ try:
 except ImportError:
   zoneinfo_available = False
 
-import requests
 from flask import Flask
+import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # Configurar logs para ver errores detallados en Render
 logging.basicConfig(
@@ -37,14 +36,19 @@ def home():
 
 
 def run_web():
-  app.run(host="0.0.0.0", port=10000)
+  port = int(os.getenv("PORT", "10000"))
+  app.run(host="0.0.0.0", port=port)
 
 
 # ==========================================
 # 2. LÓGICA DEL BOT: BET BUILDERS MASIVOS GLOBALES Y HORA COLOMBIA
 # ==========================================
-TOKEN = os.getenv("TELEGRAM_TOKEN", "9077971398:AAHazVQzDFwfrkciKH3hDyB3wBJ8mfVeRY8")
-ODDS_API_KEY = "d242634955bdd7ea26e6781fe19d3753"
+TOKEN = os.getenv(
+    "TELEGRAM_TOKEN", "9077971398:AAHazVQzDFwfrkciKH3hDyB3wBJ8mfVeRY8"
+)
+ODDS_API_KEY = os.getenv(
+    "ODDS_API_KEY", "d242634955bdd7ea26e6781fe19d3753"
+)
 TIPSTRR_LEAST_EXPECTED_URL = "https://tipstrr.com/tipster/the-least-expected"
 
 
@@ -54,24 +58,29 @@ def obtener_stats_least_expected():
       "User-Agent": (
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
           "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-      )
+      ),
+      "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
   }
   try:
     resp = requests.get(TIPSTRR_LEAST_EXPECTED_URL, headers=headers, timeout=15)
     resp.raise_for_status()
 
-    raw_html = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=re.S | re.I)
+    raw_html = re.sub(
+        r"<(script|style)[^>]*>.*?</\1>", " ", resp.text, flags=re.S | re.I
+    )
     sin_tags = re.sub(r"<[^>]+>", " ", raw_html)
     texto = " ".join(html.unescape(sin_tags).split())
 
-    roi_match = re.search(r"ROI[:\s]+([+-]?\d+(?:\.\d+)?%)", texto, re.IGNORECASE)
+    roi_match = re.search(
+        r"\bROI\b[:\s]+([+-]?\d+(?:\.\d+)?%)", texto, re.IGNORECASE
+    )
     profit_match = re.search(
-        r"(?:Profit|Beneficio)[:\s]+([+-]?[£$€]?\d+(?:,\d{3})*(?:\.\d+)?)",
+        r"\b(?:Profit|Beneficio)\b[:\s]+([+-]?[£$€]?\d+(?:,\d{3})*(?:\.\d+)?)",
         texto,
         re.IGNORECASE,
     )
     win_match = re.search(
-        r"(?:Win Rate|Strike Rate|Acierto)[:\s]+(\d+(?:\.\d+)?%)",
+        r"\b(?:Win Rate|Strike Rate|Acierto)\b[:\s]+(\d+(?:\.\d+)?%)",
         texto,
         re.IGNORECASE,
     )
@@ -79,15 +88,24 @@ def obtener_stats_least_expected():
     picks = []
     for bloque in re.split(r"(?<=[.!?])\s+|\s{2,}", texto):
       linea = bloque.strip()
-      if len(linea) > 15 and ("vs" in linea.lower() or "@" in linea.lower()):
-        picks.append(linea[:140])
+      if (
+          20 <= len(linea) <= 140
+          and (" vs " in linea.lower() or "@" in linea.lower())
+          and not any(
+              ruido in linea.lower()
+              for ruido in ["cookie", "privacy", "terms", "sign up", "log in"]
+          )
+      ):
+        picks.append(linea)
       if len(picks) >= 5:
         break
 
     return {
         "disponible": True,
         "roi": roi_match.group(1) if roi_match else "Ver perfil en Tipstrr",
-        "beneficio": profit_match.group(1) if profit_match else "Ver perfil en Tipstrr",
+        "beneficio": (
+            profit_match.group(1) if profit_match else "Ver perfil en Tipstrr"
+        ),
         "acierto": win_match.group(1) if win_match else "Ver perfil en Tipstrr",
         "picks": picks,
         "url": TIPSTRR_LEAST_EXPECTED_URL,
@@ -101,12 +119,81 @@ def obtener_stats_least_expected():
     }
 
 
+def _cuota_doble_oportunidad(cuota_equipo: float, cuota_empate: float) -> float:
+  """Calcula una cuota estimada de Doble Oportunidad (1X o X2) con margen de casa."""
+  if cuota_equipo <= 1.01 or cuota_empate <= 1.01:
+    return 1.25
+  prob_combinada = (1.0 / cuota_equipo) + (1.0 / cuota_empate)
+  if prob_combinada <= 0:
+    return 1.25
+  cuota_justa = 1.0 / prob_combinada
+  cuota_estimada = cuota_justa * 0.94
+  return round(min(max(cuota_estimada, 1.12), 1.85), 2)
+
+
+def _generar_pronostico_partido(
+    home_team: str,
+    away_team: str,
+    cuota_local: float,
+    cuota_visitante: float,
+    cuota_empate: float,
+) -> dict:
+  """Genera pronóstico de Doble Oportunidad y Bet Builder de 3 selecciones coherente con las cuotas."""
+  h_low = home_team.lower()
+  a_low = away_team.lower()
+
+  fuerza_visitante_destacada = any(
+      eq in a_low for eq in ["zenit", "hjk", "fiorentina"]
+  )
+  fuerza_local_destacada = any(
+      eq in h_low for eq in ["oviedo", "inter turku"]
+  )
+
+  if fuerza_visitante_destacada and not fuerza_local_destacada:
+    favorece_visitante = True
+  elif fuerza_local_destacada:
+    favorece_visitante = False
+  else:
+    favorece_visitante = cuota_visitante < cuota_local
+
+  if favorece_visitante:
+    doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
+    cuota_base = cuota_visitante
+  else:
+    doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
+    cuota_base = cuota_local
+
+  c1 = _cuota_doble_oportunidad(cuota_base, cuota_empate)
+
+  # Probabilidad implícita del favorito para ajustar mercados de goles (>1.5 y >0.5 2T)
+  prob_fav = 1.0 / max(cuota_base, 1.15)
+  prob_emp = 1.0 / max(cuota_empate, 2.0)
+  indice_goles = min(max((prob_fav + (1.0 - prob_emp * 0.7)) * 0.5, 0.35), 0.85)
+
+  c2 = round(min(max(1.18 + (1.0 - indice_goles) * 0.32, 1.18), 1.50), 2)
+  c3 = round(min(max(1.20 + (1.0 - indice_goles) * 0.35, 1.20), 1.55), 2)
+  cuota_total_evento = round(c1 * c2 * c3, 2)
+
+  # Estimación de acierto basada en la probabilidad implícita combinada (acotada a rango prudente)
+  prob_total_aprox = (1.0 / max(cuota_total_evento, 1.1)) * 100
+  efectividad_evento = int(round(min(max(prob_total_aprox * 1.35, 58), 82)))
+
+  return {
+      "doble_oportunidad": doble_oportunidad,
+      "c1": c1,
+      "c2": c2,
+      "c3": c3,
+      "cuota_total_evento": cuota_total_evento,
+      "efectividad_evento": efectividad_evento,
+  }
+
+
 async def least_expected_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
   await update.message.reply_text(
       "📊 Consultando estadísticas y pronósticos públicos de **The Least Expected** (Tipstrr)...",
       parse_mode="Markdown",
   )
-  datos = obtener_stats_least_expected()
+  datos = await asyncio.to_thread(obtener_stats_least_expected)
   if not datos["disponible"]:
     await update.message.reply_text(
         f"⚠️ No se pudo leer el perfil público de **The Least Expected** en este momento.\n"
@@ -148,7 +235,7 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
   url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu,uk,us,au&markets=h2h&oddsFormat=decimal"
 
   try:
-    response = requests.get(url, timeout=20)
+    response = await asyncio.to_thread(requests.get, url, timeout=20)
     data = response.json()
 
     if isinstance(data, dict) and "message" in data:
@@ -221,20 +308,22 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Dividir en bloques de máximo 6 partidos (hasta 5 mensajes en total)
     tamanio_bloque = 6
     bloques = [
-        partidos_a_mostrar[i:i + tamanio_bloque]
+        partidos_a_mostrar[i : i + tamanio_bloque]
         for i in range(0, len(partidos_a_mostrar), tamanio_bloque)
     ]
 
     total_bloques = len(bloques)
 
     # Obtener resumen de The Least Expected para incluirlo al final de /combinadas
-    least_exp = obtener_stats_least_expected()
+    least_exp = await asyncio.to_thread(obtener_stats_least_expected)
 
     for index, bloque_partidos in enumerate(bloques, 1):
       if not bloque_partidos:
         continue
 
-      mensaje = f"🎯 **CARTELERA GLOBAL MASIVA (Parte {index}/{total_bloques})** 🌍⚽\n\n"
+      mensaje = (
+          f"🎯 **CARTELERA GLOBAL MASIVA (Parte {index}/{total_bloques})** 🌍⚽\n\n"
+      )
 
       for i, partido in enumerate(bloque_partidos, 1):
         num_real = (index - 1) * tamanio_bloque + i
@@ -261,8 +350,9 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # EXTRACCIÓN BLINDADA Y ROBUSTA DE CUOTAS
         bookmakers = partido.get("bookmakers", [])
-        cuota_local = 1.80
-        cuota_visitante = 2.10
+        cuota_local = 2.10
+        cuota_visitante = 2.60
+        cuota_empate = 3.20
         cuotas_encontradas = False
 
         if bookmakers:
@@ -272,69 +362,60 @@ async def combinadas(update: Update, context: ContextTypes.DEFAULT_TYPE):
               if market.get("key") == "h2h":
                 outcomes = market.get("outcomes", [])
                 for outcome in outcomes:
-                  name = outcome.get("name", "")
-                  price = outcome.get("price", 1.80)
-                  if name.strip().lower() == home_team.strip().lower():
+                  name = outcome.get("name", "").strip().lower()
+                  price = float(outcome.get("price", 2.0))
+                  if name == home_team.strip().lower():
                     cuota_local = price
-                  elif name.strip().lower() == away_team.strip().lower():
+                  elif name == away_team.strip().lower():
                     cuota_visitante = price
+                  elif name == "draw":
+                    cuota_empate = price
                 cuotas_encontradas = True
                 break
             if cuotas_encontradas:
               break
 
         # =========================================================================
-        # CORRECCIÓN INTELIGENTE DE FAVORITO Y EQUIPOS VISITANTES DOMINANTES
+        # LÓGICA DE PRONÓSTICO BASADA EN CUOTAS Y EQUIPOS DESTACADOS
         # =========================================================================
-        h_low = home_team.lower()
-        a_low = away_team.lower()
-
-        fuerza_visitante_destacada = any(eq in a_low for eq in ["zenit", "hjk", "fiorentina"])
-        fuerza_local_destacada = any(eq in h_low for eq in ["oviedo", "inter turku"])
-
-        if fuerza_visitante_destacada and not fuerza_local_destacada:
-          doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
-          c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
-        elif fuerza_local_destacada:
-          doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
-          c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
-        else:
-          if cuota_visitante < cuota_local:
-            doble_oportunidad = f"Doble Oportunidad (X2 - Gana/Empata {away_team})"
-            c1 = round(min(max(cuota_visitante * 0.85, 1.20), 1.45), 2)
-          else:
-            doble_oportunidad = f"Doble Oportunidad (1X - Gana/Empata {home_team})"
-            c1 = round(min(max(cuota_local * 0.85, 1.20), 1.45), 2)
-
-        # Generar cuotas lógicas para el Bet Builder de 3 selecciones (aprox x2.00)
-        c2 = round(random.uniform(1.22, 1.35), 2)
-        c3 = round(random.uniform(1.25, 1.40), 2)
-        cuota_total_evento = round(c1 * c2 * c3, 2)
-        efectividad_evento = random.randint(76, 78)
+        pronostico = _generar_pronostico_partido(
+            home_team=home_team,
+            away_team=away_team,
+            cuota_local=cuota_local,
+            cuota_visitante=cuota_visitante,
+            cuota_empate=cuota_empate,
+        )
 
         mensaje += (
             f"⚽ *{num_real}. {home_team} vs {away_team}*\n"
             f"   🏆 {liga_sport}\n"
             f"   🇨🇴 **Hora Colombia:** `{hora_col}`\n"
             f"   📊 **Bet Builder (3 Selecciones Estadísticas):**\n"
-            f"      1️⃣ {doble_oportunidad}: `Cuota {c1}`\n"
-            f"      2️⃣ Goles Totales (>1.5): `Cuota {c2}`\n"
-            f"      3️⃣ Mitades (>0.5 Goles 2do T): `Cuota {c3}`\n"
-            f"   ⚡ **Cuota Total del Partido (x3):** `x{cuota_total_evento}`\n"
-            f"   📈 **Efectividad Estimada:** `{efectividad_evento}%` ⚖️\n\n"
+            f"      1️⃣ {pronostico['doble_oportunidad']}: `Cuota"
+            f" {pronostico['c1']}`\n"
+            f"      2️⃣ Goles Totales (>1.5): `Cuota {pronostico['c2']}`\n"
+            f"      3️⃣ Mitades (>0.5 Goles 2do T): `Cuota {pronostico['c3']}`\n"
+            f"   ⚡ **Cuota Total del Partido (x3):**"
+            f" `x{pronostico['cuota_total_evento']}`\n"
+            f"   📈 **Efectividad Estimada:**"
+            f" `{pronostico['efectividad_evento']}%` ⚖️\n\n"
             f"──────────────────────\n"
         )
 
       if index == total_bloques:
-        mensaje += f"_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como Rushbet).\nTotal partidos globales analizados: {total_partidos}_"
+        mensaje += (
+            "_💡 Cárgalos en el 'Creador de Apuestas' de tu plataforma (como"
+            f" Rushbet).\nTotal partidos globales analizados: {total_partidos}_"
+        )
         if least_exp.get("disponible"):
           mensaje += (
-              f"\n\n🏆 **The Least Expected (Tipstrr):** "
-              f"ROI `{least_exp['roi']}` | Beneficio `{least_exp['beneficio']}` | Acierto `{least_exp['acierto']}`"
+              "\n\n🏆 **The Least Expected (Tipstrr):** "
+              f"ROI `{least_exp['roi']}` | Beneficio"
+              f" `{least_exp['beneficio']}` | Acierto `{least_exp['acierto']}`"
           )
 
       await update.message.reply_text(mensaje, parse_mode="Markdown")
-      time.sleep(0.7)  # Pausa breve para orden en Telegram
+      await asyncio.sleep(0.7)
 
   except Exception as e:
     logger.error(f"Error al consultar The Odds API: {e}")
@@ -349,7 +430,10 @@ async def error_handler(object, context: ContextTypes.DEFAULT_TYPE):
 
 
 def run_bot():
-  print("Iniciando el bot con cartelera masiva global ampliada y filtro de 30 min...")
+  print(
+      "Iniciando el bot con cartelera masiva global ampliada y filtro de 30"
+      " min..."
+  )
   application = ApplicationBuilder().token(TOKEN).build()
 
   application.add_handler(CommandHandler("start", start))
